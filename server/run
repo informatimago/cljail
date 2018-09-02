@@ -1,0 +1,31 @@
+#!/bin/bash
+root="$1"
+user="$2"
+group="$3"
+EX_USAGE=64           # command line usage error 
+function error(){
+    local status="$1" ; shift
+    printf "%s error: %s\n" "$pname" "$*"
+    exit "$status"
+}
+if [ -z "${root}" ] ; then
+    error $EX_USAGE "missing root directory."
+fi
+if [ -z "${user}" ] ; then
+   user=nobody
+fi
+if [ -z "${group}" ] ; then
+   group=nogroup
+fi
+# mkdir -p "${root}/proc"
+# mount -t proc proc "${root}/proc"
+chroot="$(which chroot)"
+chroot=/usr/sbin/chroot
+env=/usr/bin/env
+uid=$(id -u ${user})
+gid=$(id -g ${group})
+# echo root=${root}
+# echo user=${user} uid=${uid}
+# echo group=${group} gid=${gid}
+exec "${env}" -i HOME=/home/${user} USER=${user} PATH=/bin LD_LIBRARY_PATH=/usr/local/lib:/lib:/usr/lib \
+    "${chroot}" --userspec="${uid}:${gid}" "${root}" "$(cat "${root}/etc/lisp.conf")"

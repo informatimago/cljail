@@ -1,0 +1,98 @@
+.. comment: -*- mode:rst;coding:utf-8 -*-
+
+
+Installation
+==================================================================================
+
+
+To install ``iplwcl-server``,  update the paths and user and group in
+the ``configuration.lisp`` file, and the ``Makefile`` (or leave the defaults).
+
+1. Create a user and group for iplwcl: ::
+
+       groupadd iplwcl
+       useradd -g iplwcl -m iplwcl
+
+
+2. Install ccl and quicklisp
+
+3. Compile and install the iplwcl server: ::
+
+       make iplwcl-server
+       sudo make install
+
+4. Launch the server: ::
+
+       sudo ./siab
+
+The server can also be launched eg. from /etc/rc.local; cf. the ``siab``
+script for an example of the command line.
+
+
+Architecture
+========================================================================
+
+We use *shellinaboxd* as a terminal emulator in a web page.
+Notice: we need the patch ``0001-add-new-keyCodes-used-by-FF15.patch``
+to be able to type dashes in *firefox*!
+
+The ``siab`` script runs *shellinaboxd* in background, as *root*.  It is
+started from ``/etc/rc.local``.
+
+This script configures a single services on the ``/`` path, to run the
+``iplwcl-server`` as *root*. 
+
+``iplwcl-server`` is a *ccl* program that manages users.  It lets them
+create account, and log in.  When a user logs in the first time, it
+creates a chroot jail box for her to run *ccl* in a private environment.
+
+
+Directories and files
+----------------------------------------------------------------------------------
+
+/usr/local/share/ipl/scripts/make-chroot
+
+    This script builds the chroot jail for a user.
+
+
+/usr/local/share/ipl/scripts/run
+
+    This script enters the chroot jail, switching to the iplwcl unix
+    user account.
+
+/usr/local/share/ipl/scripts/siab
+
+    This script runs the shellinaboxd server.
+
+/usr/local/share/ipl/bin/iplwcl-server
+
+    This program manages the users and chroot jail boxes.
+
+/usr/local/share/ipl/etc/users.data
+
+    This is the user database.
+
+/usr/local/share/ipl/users/
+    
+    This directory contains the user's chroot jail boxes.  Each user
+    is identified by a md5 hash of their login and token, and their
+    chroot jail box is stored in a directory named such as: ::
+
+       /usr/local/share/ipl/users/E64/E64F075DB706AE4BFA5C848C24D04B8C/
+
+
+Chroot Jail
+==================================================================================
+
+Note: the setup of the chroot jail is done by the make-chroot script.
+Some level of automatism is included in it, but it could be more
+parameterized (eg. we could give it a configuration file or parameters
+to tell it what implementation and executables to include).  While it
+tries to find automatically the libraries depended on by the
+implementation and programs, it doesn't seem to be doing a very good
+job for gethostbyname in all cases.  Eg. it works on GNU/Linux debian
+6.0.9 but not on GNU/Linux debian 7.4 wheezy.
+
+
+
+.. comment: THE END

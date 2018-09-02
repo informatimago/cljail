@@ -1,0 +1,11 @@
+#!/bin/bash
+exec shellinaboxd \
+     --background=/var/run/iplwcl.pid \
+     --port=8116 \
+     --disable-ssl \
+     --user=root \
+     --group=root \
+     --service="/:root:root:/usr/local/share/ipl:/usr/local/share/ipl/bin/iplwcl-server ${peer}"
+
+#     --verbose \
+#

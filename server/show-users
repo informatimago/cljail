@@ -1,0 +1,73 @@
+#!/usr/bin/clisp -ansi -q -E utf-8
+;;;; -*- mode:lisp;coding:utf-8 -*-
+;;;;**************************************************************************
+;;;;FILE:               show-users
+;;;;LANGUAGE:           Common-Lisp
+;;;;SYSTEM:             Common-Lisp
+;;;;USER-INTERFACE:     NONE
+;;;;DESCRIPTION
+;;;;    
+;;;;    Show iplwcl users.
+;;;;    
+;;;;AUTHORS
+;;;;    <nil> Pascal J. Bourguignon <pjb@informatimago.com>
+;;;;MODIFICATIONS
+;;;;    2014-05-24 <pjb> Created.
+;;;;BUGS
+;;;;
+;;;;    We don't use the advisory lock that we should to avoid reading
+;;;;    the user database while it's updated.
+;;;;
+;;;;    We use copy and pasted code from iplwcl instead of hooking on it.
+;;;;
+;;;;LEGAL
+;;;;    AGPL3
+;;;;    
+;;;;    Copyright Pascal J. Bourguignon 2014 - 2014
+;;;;    
+;;;;    This program is free software: you can redistribute it and/or modify
+;;;;    it under the terms of the GNU Affero General Public License as published by
+;;;;    the Free Software Foundation, either version 3 of the License, or
+;;;;    (at your option) any later version.
+;;;;    
+;;;;    This program is distributed in the hope that it will be useful,
+;;;;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;;;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;;;    GNU Affero General Public License for more details.
+;;;;    
+;;;;    You should have received a copy of the GNU Affero General Public License
+;;;;    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;;;;**************************************************************************
+(in-package "COMMON-LISP-USER")
+
+(defparameter *user-database*         #P"/usr/local/share/ipl/etc/users.data")
+(defparameter *boxes-directory*       #P"/usr/local/share/ipl/users/")
+
+(defstruct user
+  id
+  login
+  token)
+
+(defun load-users (db)
+  (file-position db 0)
+  (with-standard-io-syntax
+   (loop
+    :for user = (read db nil nil)
+    :while user
+    :collect user)))
+
+
+
+(defun main (args)
+  (declare (ignore args))
+  (dolist (user (sort (with-open-file (db *user-database* :direction :input :if-does-not-exist :error)
+                        (load-users db))
+
+                      (function string<) :key (function user-login)))
+    (format t "~A ~S~%" (user-id user) (user-login user)))
+  (finish-output))
+
+#-testing-script
+(ext:exit (main ext:*args*))
+
+;;;; THE END ;;;;

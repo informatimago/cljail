@@ -1,0 +1,230 @@
+# -*- mode:sh;coding:utf-8 -*-
+#*****************************************************************************
+#FILE:               make-chroot
+#LANGUAGE:           sh
+#SYSTEM:             POSIX
+#USER-INTERFACE:     NONE
+#DESCRIPTION
+#    
+#    Script to build a chroot environment for IPLwCL.
+#    We use debroot
+#    
+#AUTHORS
+#    <PJB> Pascal J. Bourguignon <pjb@informatimago.com>
+#MODIFICATIONS
+#    2015-01-14 <PJB> Added header.
+#BUGS
+#LEGAL
+#    AGPL3
+#    
+#    Copyright Pascal J. Bourguignon 2015 - 2015
+#    
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU Affero General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#    
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#    
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#*****************************************************************************
+#    
+#!/bin/bash
+root="$1"
+user="$2"
+group="$3"
+pname="$(basename "$0")"
+uname=$(uname)
+tmp=/tmp/chroot.$$
+verbose=0
+if [ $verbose -eq 1 ] ; then
+    cp_verbose=-v
+    tar_verbose=v
+else
+    cp_verbose=
+    tar_verbose=
+fi
+
+
+EX_OK=0               # successful termination 
+EX__BASE=64           # base value for error messages 
+EX_USAGE=64           # command line usage error 
+EX_DATAERR=65         # data format error 
+EX_NOINPUT=66         # cannot open input 
+EX_NOUSER=67          # addressee unknown 
+EX_NOHOST=68          # host name unknown 
+EX_UNAVAILABLE=69     # service unavailable 
+EX_SOFTWARE=70        # internal software error 
+EX_OSERR=71           # system error (e.g., can't fork) 
+EX_OSFILE=72          # critical OS file missing 
+EX_CANTCREAT=73       # can't create (user) output file 
+EX_IOERR=74           # input/output error 
+EX_TEMPFAIL=75        # temp failure; user is invited to retry 
+EX_PROTOCOL=76        # remote error in protocol 
+EX_NOPERM=77          # permission denied 
+EX_CONFIG=78          # configuration error 
+EX__MAX=78            # maximum listed value 
+
+function error(){
+    local status="$1" ; shift
+    printf "%s error: %s\n" "$pname" "$*"
+    printf "\n"
+    sleep 1
+    exit "$status"
+}
+
+files=(
+    /etc/{resolv,host}.conf
+    /etc/{hostname,protocols,networks,rpc} 
+    /usr/share/tabset/{stdcrt,vt100,vt300,std}
+    /lib/terminfo/v/vt*
+)
+
+function libraries(){
+    local arg
+    for arg ; do
+        echo "$arg"
+        ldd "${arg}" \
+            | sed \
+            -e '1d' \
+            -e '/statically linked/d' \
+            -e 's^[	 ]*\(.* => \)\?\(.*\) (.*^\2^'
+    done
+    echo /usr/lib/libbind9.so*
+    echo /usr/lib/libdns.so*
+    echo /usr/lib/liblwres.so*                             # required for gethostbyname
+    echo /usr/lib/gcc/x86_64-linux-gnu/4.7/libgcc_s.so*    # required for pthread_cancel for eg. :swank
+    echo /lib/x86_64-linux-gnu/libncurses.so*              # required for :cl-charms
+}
+
+function closure(){
+    local op="$1";shift
+    local notsame=1
+    local arg
+    for arg ; do "$op" "$arg" ; done|sort -u>"${tmp}.libs"
+    cp "${tmp}.libs" "${tmp}.newlibs"
+    while [ $notsame -ne 0 ] ; do
+        for arg in $(cat "${tmp}.libs") ; do "$op" "$arg" ; done>>"${tmp}.newlibs"
+        sort -u -o "${tmp}.newlibs" "${tmp}.newlibs"
+        cmp -s "${tmp}.libs" "${tmp}.newlibs" 
+        notsame=$?
+        cp "${tmp}.newlibs" "${tmp}.libs"
+    done
+    cat "${tmp}.libs"
+}
+
+
+
+function checkParameters(){
+    if [ -z "${root}" ] ; then
+        error $EX_USAGE "missing root directory."
+    fi
+    if [ -z "${user}" ] ; then
+        user=nobody
+    fi
+    if [ -z "${group}" ] ; then
+        group=nogroup
+    fi
+}
+
+function buildChrootJail(){
+    export LD_LIBRARY_PATH=/usr/local/lib:/lib:/usr/lib 
+    mkdir -p "${root}"/{bin,dev,proc,etc/pam.d,home/${user},lib/security,var/{lib,log,run/nscd,tmp},tmp,usr/{bin,lib,share}}
+    # cp -a /bin/bash  "${root}/bin/bash"
+
+    for rc in /data/languages/ccl/bin/ccl /usr/local/bin/ccl /usr/bin/ccl ; do
+        if [ -x "$rc" ] ; then
+            break;
+        fi
+    done
+    sed -e 's/\<exec\>/echo/' < "${rc}" > "${tmp}.chroot.rc"
+    chmod 755 "${tmp}.chroot.rc"
+    bin="$("${tmp}.chroot.rc")"
+    if [ -z "${bin}" ] ; then
+        error  $EX_SOFTWARE "CANNOT FIND THE CCL IMPLEMENTATION!"
+    fi
+
+    (tar -C / -cf - "$(dirname "${bin}")/." | tar -C "${root}" -xf${tar_verbose} - ) 2>/dev/null
+
+    # bins=( "${bin}" /bin/bash /usr/bin/strace )
+    bins=( "${bin}" )
+    libs=( /lib/libnss_* /lib/libresolv* /lib/libc-* /lib/libc.* /usr/lib/libssl* )
+
+    for lib in $(closure libraries "${bins[@]}" "${libs[@]}" 2>/dev/null) ; do 
+        mkdir -p "$(dirname "${root}/${lib}")"
+        cp ${cp_verbose} "${lib}" "${root}/${lib}" 2>/dev/null
+    done
+
+    tar cf - ${files[@]} | tar -C "${root}" -xvpof -
+
+    cat > "${root}/etc/hosts" <<EOF
+127.0.0.1 localhost.localdomain localhost
+5.9.56.230 hubble.informatimago.com hubble
+EOF
+
+#     cat > "${root}/etc/resolv.conf" <<EOF
+# search lan.informatimago.com informatimago.com
+# domainname informatimago.com
+# nameserver 127.0.0.1
+# nameserver 213.133.98.97
+# nameserver 213.133.99.99
+# nameserver 213.133.100.100
+# EOF
+
+    cat > "${root}/etc/nsswitch.conf" <<EOF
+passwd:          files 
+group:           files 
+shadow:          files 
+hosts:       dns files
+networks:        files 
+netmasks:        files 
+bootparams:      files 
+protocols:       files 
+services:        files 
+ethers:          files 
+rpc:             files 
+netgroup:        files 
+autmount:        files 
+aliases:         files 
+EOF
+
+    echo "${user}:*:$(id -u ${user}):$(id -g ${user}):User:/home/${user}:${bin}" > "${root}/etc/passwd"
+    echo "${group}:x:$(id -g ${user}):" > "${root}/etc/group"
+    echo "${bin}" > "${root}/etc/lisp.conf"
+
+    wget --quiet http://beta.quicklisp.org/quicklisp.lisp -O "${root}/home/${user}/quicklisp.lisp"
+
+    chown -R "root:root"   "${root}"
+    chown -R "${user}:${group}" "${root}/home/${user}"
+}
+
+
+function initializeQuicklisp(){
+    "$(dirname "$0")/run" "${root}" "${user}" "${group}" <<EOF
+(load #P"~/quicklisp.lisp")
+(quicklisp-quickstart:install)
+(quit)
+EOF
+    cat > "${root}/home/${user}/.ccl-init.lisp" <<EOF
+(setenv "TERM" "vt100")
+#-quicklisp
+(let ((quicklisp-init (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname))))
+  (when (probe-file quicklisp-init)
+    (load quicklisp-init)))
+EOF
+}
+
+
+function main(){
+    checkParameters
+    buildChrootJail
+    initializeQuicklisp
+}
+
+main
+
+#### THE END ####
